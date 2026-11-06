@@ -1481,9 +1481,12 @@ Details:
 - 6c. The selected student is already deactivated, including when another instructor deactivates her after the warning is displayed:
   - 6c1. After checking the caller's authorization, the system informs the caller that the student is already deactivated and leaves all records unchanged.
   - 6c2. The use case ends.
+- 2a. The caller is not authorized under BR-student-lifecycle and BR-section-scoped-access:
+  - 2a1. The system denies the request under FR-SEC-deny-unauthorized without changing the account or submitted work.
+  - 2a2. The use case ends. Authorization is checked again when deactivation is requested at step 6.
 **Priority:** Low
 **Frequency of Use:** Rare. Occurs occasionally when a student withdraws from a course section.
-**Business Rules:** BR-student-lifecycle, BR-evaluation-active-evaluatee, BR-submission-owed
+**Business Rules:** BR-student-lifecycle, BR-evaluation-active-evaluatee, BR-submission-owed, BR-section-scoped-access, BR-role-based-access
 
 **Associated Information:**
 - Peer evaluation eligibility and report visibility after deactivation follow BR-evaluation-active-evaluatee; reminder and submission obligations follow BR-submission-owed.
