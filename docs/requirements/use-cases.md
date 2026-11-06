@@ -1475,9 +1475,12 @@ Details:
 **Extensions:**
 - 6a. The student is assigned to a team:
   - 6a1. The system applies BR-student-lifecycle when deactivating the account; the use case continues at step 7.
+- 6b. The student is already logged in when deactivation completes:
+  - 6b1. On her next request to a protected resource, the system checks her current account status and denies access under FR-SEC-active-account, including when the request carries an unexpired token issued before deactivation.
+  - 6b2. The deactivation use case ends.
 **Priority:** Low
 **Frequency of Use:** Rare. Occurs occasionally when a student withdraws from a course section.
-**Business Rules:** BR-student-lifecycle, BR-evaluation-active-evaluatee
+**Business Rules:** BR-student-lifecycle, BR-evaluation-active-evaluatee, BR-submission-owed
 
 **Associated Information:**
 - Peer evaluation eligibility and report visibility after deactivation follow BR-evaluation-active-evaluatee; reminder and submission obligations follow BR-submission-owed.
