@@ -1458,7 +1458,7 @@ Details:
 
 **Preconditions:**
 - PRE-1. The course admin or instructor is logged into the system.
-- PRE-2. There exists at least one active student in the system.
+- PRE-2. The student to be deactivated exists in the system.
 
 **Postconditions:**
 - POST-1. The student's account is deactivated.
@@ -1478,6 +1478,9 @@ Details:
 - 6b. The student is already logged in when deactivation completes:
   - 6b1. On her next request to a protected resource, the system checks her current account status and denies access under FR-SEC-active-account, including when the request carries an unexpired token issued before deactivation.
   - 6b2. The deactivation use case ends.
+- 6c. The selected student is already deactivated, including when another instructor deactivates her after the warning is displayed:
+  - 6c1. After checking the caller's authorization, the system informs the caller that the student is already deactivated and leaves all records unchanged.
+  - 6c2. The use case ends.
 **Priority:** Low
 **Frequency of Use:** Rare. Occurs occasionally when a student withdraws from a course section.
 **Business Rules:** BR-student-lifecycle, BR-evaluation-active-evaluatee, BR-submission-owed
