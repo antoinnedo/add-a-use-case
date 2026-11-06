@@ -1484,13 +1484,17 @@ Details:
 - 2a. The caller is not authorized under BR-student-lifecycle and BR-section-scoped-access:
   - 2a1. The system denies the request under FR-SEC-deny-unauthorized without changing the account or submitted work.
   - 2a2. The use case ends. Authorization is checked again when deactivation is requested at step 6.
+- 5a. The caller cancels or closes the warning without confirming:
+  - 5a1. The system returns to the student details without submitting a deactivation request or changing any records.
+  - 5a2. The use case ends.
 **Priority:** Low
 **Frequency of Use:** Rare. Occurs occasionally when a student withdraws from a course section.
 **Business Rules:** BR-student-lifecycle, BR-evaluation-active-evaluatee, BR-submission-owed, BR-section-scoped-access, BR-role-based-access
 
 **Associated Information:**
 - Peer evaluation eligibility and report visibility after deactivation follow BR-evaluation-active-evaluatee; reminder and submission obligations follow BR-submission-owed.
-- Consequence of the deactivation: The student will no longer be able to log in or submit weekly activity reports and peer evaluations, but the student's account and her previously submitted work are kept in the system. Deactivation will NOT remove the student from the system, and the account can be reactivated in the future (UC-STU-reactivate-student: Reactivate a student). This is distinct from deletion (UC-STU-delete-student: Delete a student), which is a physical, unrecoverable delete. The course admin or instructor shall be able to cancel the use case at any time prior to submitting it.
+- The warning in step 4 names the selected student and explains the consequences governed by BR-student-lifecycle, BR-evaluation-active-evaluatee, BR-submission-owed, and FR-SEC-active-account. It offers explicit Confirm and Cancel actions.
+- The caller may cancel before submitting the confirmation. A deactivated account may subsequently be reactivated through UC-STU-reactivate-student; deactivation is distinct from UC-STU-delete-student.
 
 **Related Use Cases:** UC-STU-delete-student: Delete a student; UC-STU-reactivate-student: Reactivate a student
 **Assumptions:**
