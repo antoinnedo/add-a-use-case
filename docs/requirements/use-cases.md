@@ -1473,6 +1473,8 @@ Details:
 7. Use case ends.
 
 **Extensions:**
+- 6a. The student is assigned to a team:
+  - 6a1. The system applies BR-student-lifecycle when deactivating the account; the use case continues at step 7.
 **Priority:** Low
 **Frequency of Use:** Rare. Occurs occasionally when a student withdraws from a course section.
 **Business Rules:** BR-student-lifecycle
@@ -1516,6 +1518,7 @@ Details:
 **Business Rules:** BR-student-lifecycle
 
 **Associated Information:**
+- Reactivation follows the retention policy in BR-student-lifecycle; it does not assign the student to a different team.
 - The course admin or instructor shall be able to cancel the use case at any time prior to submitting it.
 
 **Related Use Cases:** UC-STU-delete-student: Delete a student; UC-STU-deactivate-student: Deactivate a student
