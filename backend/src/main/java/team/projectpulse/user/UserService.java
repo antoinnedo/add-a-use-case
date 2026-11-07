@@ -54,12 +54,14 @@ public class UserService implements UserDetailsService {
             throw new IllegalArgumentException("Password must contain at least one letter and one number, and at least 6 characters.");
         }
 
-        // If the token is valid, update the user's password.
-        this.userRepository.findByEmail(email)
-                .map(oldUser -> {
-                    oldUser.setPassword(this.passwordEncoder.encode(newPassword));
-                    return this.userRepository.save(oldUser);
-                }).orElseThrow(() -> new ObjectNotFoundException("email", email));
+        // A full entity write can restore stale account status after a concurrent deactivation.
+        int updated = this.userRepository.updatePasswordByEmail(email, this.passwordEncoder.encode(newPassword));
+        if (updated == 0) {
+            throw new ObjectNotFoundException("email", email);
+        }
+        if (updated != 1) {
+            throw new IllegalStateException("Password reset requires a unique email address.");
+        }
 
         this.resetPasswordService.deleteForgetPasswordToken(email); // Finally, delete the forget password token.
     }

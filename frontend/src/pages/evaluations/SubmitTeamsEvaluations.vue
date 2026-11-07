@@ -105,21 +105,17 @@
     <!-- submit button on the right side-->
     <div style="display: flex; justify-content: flex-end">
       <el-button
-        type="primary"
-        @click="submitPeerEvaluations"
-        v-if="isNewSubmission"
+        :type="isNewSubmission ? 'primary' : 'warning'"
+        :disabled="!peerEvalutions.length"
         :loading="isLoading"
-        >Submit</el-button
-      >
-      <el-button type="warning" @click="updatePeerEvaluations" :loading="isLoading" v-else
-        >Update</el-button
-      >
+        @click="savePeerEvaluations"
+      >{{ isNewSubmission ? 'Submit' : 'Update' }}</el-button>
     </div>
   </el-card>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { findStudentsByTeamId } from '@/apis/student'
 import type { Student, FindStudentByTeamIdResponse } from '@/apis/student/types'
 import { findSectionById } from '@/apis/section'
@@ -138,19 +134,17 @@ import { ElMessage } from 'element-plus'
 import type {
   FetchPeerEvaluationsResponse,
   PeerEvaluation,
-  Rating,
-  SubmitPeerEvaluationResponse,
-  UpdatePeerEvaluationResponse
+  Rating
 } from '@/apis/evaluation/types'
 
 const previousWeek = ref<string>('')
 const previousWeekRange = ref<string>('')
 
-const peerEvalutions = ref<PeerEvaluation[]>()
+const peerEvalutions = ref<PeerEvaluation[]>([])
 
 const loading = ref<boolean>(false)
 
-let isNewSubmission = true // Flag to indicate if this is a new submission or an update
+const isNewSubmission = computed(() => peerEvalutions.value.some((row) => row.evaluationId == null))
 
 const teamId = ref<number>(NaN) // Team ID of the student
 
@@ -205,64 +199,44 @@ async function prepareStartingPeerEvaluations() {
     previousWeek.value
   )
 
-  const activeIds = new Set(students.value.map((student) => student.id))
-  const editableEvaluations = result.data.filter((evaluation) =>
-    activeIds.has(evaluation.evaluateeId)
-  )
-
-  // Only evaluations of active teammates are editable in this form.
-  if (editableEvaluations.length > 0) {
-    peerEvalutions.value = editableEvaluations
-    isNewSubmission = false
-  } else {
-    // If not, create a new set of evaluations
-    isNewSubmission = true
-    peerEvalutions.value = students.value.map((student) => ({
-      week: previousWeek.value,
-      evaluatorId: (userInfoStore.userInfo as Student).id as number,
-      evaluateeId: student.id as number,
-      evaluateeName: `${student.firstName} ${student.lastName}`,
-      ratings: criteria.value.map((criterion) => ({
-        criterionId: criterion.criterionId as number,
-        criterion: criterion.criterion,
-        actualScore: 10 // Default score, can be changed by the user
-      })),
-      publicComment: '',
-      privateComment: ''
-    }))
-  }
+  const savedByEvaluatee = new Map(result.data.map((row) => [row.evaluateeId, row]))
+  peerEvalutions.value = students.value.map((student) => savedByEvaluatee.get(student.id as number) ?? ({
+    week: previousWeek.value,
+    evaluatorId: (userInfoStore.userInfo as Student).id as number,
+    evaluateeId: student.id as number,
+    evaluateeName: `${student.firstName} ${student.lastName}`,
+    ratings: criteria.value.map((criterion) => ({
+      criterionId: criterion.criterionId as number,
+      criterion: criterion.criterion,
+      actualScore: Math.min(10, criterion.maxScore)
+    })),
+    publicComment: '',
+    privateComment: ''
+  }))
 }
 
-// Submit peer evaluations
-async function submitPeerEvaluations() {
-  if (peerEvalutions.value) {
-    const submitPromises = peerEvalutions.value.map(async (evaluation) => {
-      const result: SubmitPeerEvaluationResponse = await submitEvaluation(evaluation)
-      return result.data
-    })
-    isLoading.value = true
-    peerEvalutions.value = await Promise.all(submitPromises) // Wait for all promises to resolve
-    isNewSubmission = false // Change to update mode
-    ElMessage.success('Peer evaluations submitted successfully')
-    isLoading.value = false
+async function savePeerEvaluations() {
+  if (isLoading.value || !peerEvalutions.value.length) return
 
-    // Send an submission confirmation email to the submitter
-    await sendPeerEvaluationSubmissionConfirmationEmail(previousWeekRange.value)
-    ElMessage.success('A confirmation email has been sent to you.')
-  }
-}
+  const hasNewRows = isNewSubmission.value
+  isLoading.value = true
+  try {
+    // Store each response immediately so a retry updates rows already created.
+    for (const [index, evaluation] of peerEvalutions.value.entries()) {
+      const result = evaluation.evaluationId == null
+        ? await submitEvaluation(evaluation)
+        : await updateEvaluation(evaluation)
+      peerEvalutions.value[index] = result.data
+    }
+    ElMessage.success(hasNewRows
+      ? 'Peer evaluations submitted successfully'
+      : 'Peer evaluations updated successfully')
 
-// Update peer evaluations
-async function updatePeerEvaluations() {
-  if (peerEvalutions.value) {
-    const submitPromises = peerEvalutions.value.map(async (evaluation) => {
-      const result: UpdatePeerEvaluationResponse = await updateEvaluation(evaluation)
-      return result.data
-    })
-
-    isLoading.value = true
-    peerEvalutions.value = await Promise.all(submitPromises) // Wait for all promises to resolve
-    ElMessage.success('Peer evaluations updated successfully')
+    if (hasNewRows) {
+      await sendPeerEvaluationSubmissionConfirmationEmail(previousWeekRange.value)
+      ElMessage.success('A confirmation email has been sent to you.')
+    }
+  } finally {
     isLoading.value = false
   }
 }

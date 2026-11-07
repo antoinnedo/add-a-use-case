@@ -135,8 +135,8 @@ Every row is an implementation acceptance criterion; test names are assigned dur
 | T13 | BR-submission-owed | Backend integration | Inactive student owes neither item; teammate owes no evaluation of her; reminder recipient selection and non-submitter report source exclude her; unrelated active-member obligations remain |
 | T14 | Dedicated action, main steps 3-5 | Backend unit + integration + Cypress | Generic PUT cannot deactivate or alter profile on a rejected transition; active UI has no deactivation status switch; a stale active profile save updates fields without restoring access; the inactive-student switch sends explicit intent and reactivates the student |
 | T15 | Main step 6, client outcome | Cypress | Pending Confirm cannot duplicate submission; failed POST shows no success and clears pending state |
-| T16 | BR-evaluation-active-evaluatee | Cypress | Inactive teammate omitted from submission targets and cannot be edited from that page; active targets remain |
-| T17 | 2a, step 2 | Backend integration | Owning unassigned admin can load student's details; unrelated instructor/admin cannot use changed GET/PUT guard to reach another course's student |
+| T16 | BR-evaluation-active-evaluatee | Cypress | Inactive teammate omitted from submission targets and cannot be edited from that page; active targets remain. A reactivated teammate without a saved evaluation gets a new row alongside saved rows. |
+| T17 | 2a, step 2 | Backend integration + Cypress | Owning unassigned admin can select the section, find the student in the roster, and reach deactivation. An unrelated instructor/admin cannot use the GET/PUT guard to reach another course's student. Browser navigation is tested with a stubbed API. |
 
 ## Open questions and risks
 

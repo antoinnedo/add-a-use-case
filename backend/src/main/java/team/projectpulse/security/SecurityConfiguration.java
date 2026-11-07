@@ -199,7 +199,7 @@ public class SecurityConfiguration {
                         .requestMatchers(HttpMethod.GET, this.baseUrl + "/instructors/{instructorId}").access(this.userOwnershipAuthorizationManager)
                         .requestMatchers(HttpMethod.PUT, this.baseUrl + "/instructors/{instructorId}").access(this.userOwnershipAuthorizationManager)
                         .requestMatchers(HttpMethod.DELETE, this.baseUrl + "/instructors/{instructorId}").access(this.userOwnershipAuthorizationManager)
-                        .requestMatchers(HttpMethod.PUT, this.baseUrl + "/instructors/sections/{sectionId}/default").access(this.sectionMembershipAuthorizationManager)
+                        .requestMatchers(HttpMethod.PUT, this.baseUrl + "/instructors/sections/{sectionId}/default").access(AuthorizationManagers.anyOf(this.sectionInstructorAuthorizationManager, this.sectionOwnershipAuthorizationManager))
                         .requestMatchers(HttpMethod.PUT, this.baseUrl + "/instructors/courses/{courseId}/default").access(this.courseMembershipAuthorizationManager)
 
                         // Security rules for the /students/** endpoint.
@@ -223,7 +223,7 @@ public class SecurityConfiguration {
                         .requestMatchers(HttpMethod.POST, this.baseUrl + "/evaluations").authenticated()
                         .requestMatchers(HttpMethod.PUT, this.baseUrl + "/evaluations/{evaluationId}").access(this.evaluationOwnershipAuthorizationManager)
                         .requestMatchers(HttpMethod.GET, this.baseUrl + "/evaluations/evaluators/{evaluatorId}/week/{week}").access(this.userOwnershipAuthorizationManager)
-                        .requestMatchers(HttpMethod.GET, this.baseUrl + "/evaluations/sections/{sectionId}/week/{week}").access(this.sectionInstructorAuthorizationManager)
+                        .requestMatchers(HttpMethod.GET, this.baseUrl + "/evaluations/sections/{sectionId}/week/{week}").access(AuthorizationManagers.anyOf(this.sectionInstructorAuthorizationManager, this.sectionOwnershipAuthorizationManager))
                         .requestMatchers(HttpMethod.GET, this.baseUrl + "/evaluations/students/{studentId}/week/{week}").access(this.userOwnershipAuthorizationManager)
                         .requestMatchers(HttpMethod.GET, this.baseUrl + "/evaluations/students/{studentId}/week/{week}/details").access(this.studentInstructorAuthorizationManager)
                         .requestMatchers(HttpMethod.GET, this.baseUrl + "/evaluations/students/{studentId}").access(this.userOwnershipAuthorizationManager)

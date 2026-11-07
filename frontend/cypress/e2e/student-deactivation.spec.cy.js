@@ -12,14 +12,14 @@ const student = {
 }
 const success = (data, message = 'Success') => ({ flag: true, code: 200, data, message })
 
-function visitAs(path, user) {
+function visitAs(path, user, defaultSectionId = 2) {
   // Client-side identity for stubbed requests. The backend suite verifies real bearer authorization.
   const claims = btoa(JSON.stringify({ exp: 4102444800 }))
   cy.visit(path, {
     onBeforeLoad(win) {
       win.localStorage.setItem('token', JSON.stringify({ token: `test.${claims}.test` }))
       win.localStorage.setItem('userInfo', JSON.stringify({ userInfo: user }))
-      win.localStorage.setItem('settings', JSON.stringify({ defaultSectionId: 2, defaultCourseId: 1 }))
+      win.localStorage.setItem('settings', JSON.stringify({ defaultSectionId, defaultCourseId: 1 }))
     }
   })
 }
@@ -54,6 +54,31 @@ describe('Student deactivation', () => {
       req.reply(success({ ...student, enabled }, message))
     }).as('deactivate')
   }
+
+  it('reaches deactivation after a course owner selects a section (T17)', () => {
+    cy.intercept('POST', '**/api/v1/rubrics/search*', success({ content: [] }))
+    cy.intercept('POST', '**/api/v1/sections/search*', success({
+      content: [{ sectionId: 2, sectionName: 'Owned section' }],
+      number: 0, size: 10, totalElements: 1
+    })).as('sections')
+    cy.intercept('PUT', '**/api/v1/instructors/sections/2/default', success(null)).as('setDefault')
+    stubDeactivation()
+
+    visitAs('/sections', { id: 1, roles: 'admin instructor' }, 1)
+    cy.wait('@sections')
+    cy.contains('tr', 'Owned section').find('.el-radio').click()
+    cy.wait('@setDefault')
+    cy.contains('Default section updated successfully').should('be.visible')
+    cy.visit('/students')
+    cy.wait('@students')
+    cy.get('[data-cy=edit-student]').click()
+    cy.wait('@details')
+    cy.get('[data-cy=deactivate-open]').click()
+    warningDialog().should('contain', 'John Smith')
+    confirm().click()
+    cy.wait('@deactivate')
+    cy.contains('tr', 'John').should('contain', 'Disabled')
+  })
 
   it('warns about the named student, sends only the dedicated action, and refreshes status (T01, T14)', () => {
     stubDeactivation()
@@ -174,8 +199,8 @@ describe('Student deactivation', () => {
 describe('Peer evaluation submission after deactivation', () => {
   const inactiveStudent = { ...student, id: 5, firstName: 'Eric', lastName: 'Hudson', enabled: false }
 
-  function openSubmission(existing) {
-    cy.intercept('GET', '**/api/v1/students/teams/1', success([student, inactiveStudent]))
+  function openSubmission(existing, teammate = inactiveStudent) {
+    cy.intercept('GET', '**/api/v1/students/teams/1', success([student, teammate]))
     cy.intercept('GET', '**/api/v1/sections/2', success({ rubricId: 3 }))
     cy.intercept('GET', '**/api/v1/rubrics/3', success({
       criteria: [{ criterionId: 1, criterion: 'Work', description: 'Quality of work', maxScore: 10 }]
@@ -184,7 +209,7 @@ describe('Peer evaluation submission after deactivation', () => {
     visitAs('/evaluations/submit-evaluations', student)
     cy.wait('@evaluations')
     cy.contains('tr', 'John Smith').should('be.visible')
-    cy.contains('tr', 'Eric Hudson').should('not.exist')
+    cy.contains('tr', 'Eric Hudson').should(teammate.enabled ? 'be.visible' : 'not.exist')
   }
 
   it('omits an inactive teammate from new submission targets (T16)', () => {
@@ -207,4 +232,26 @@ describe('Peer evaluation submission after deactivation', () => {
     cy.contains('.el-message--success', 'Peer evaluations updated successfully').should('be.visible')
     cy.get('@saveEvaluation.all').should('have.length', 1)
   })
+
+  it('creates a missing evaluation for a reactivated teammate alongside a saved evaluation (T16)', () => {
+    const saved = {
+      evaluationId: 10,
+      evaluateeId: 4,
+      evaluateeName: 'John Smith',
+      ratings: [{ criterionId: 1, actualScore: 8 }]
+    }
+    cy.intercept('PUT', '**/api/v1/evaluations/10', success(saved)).as('updateSaved')
+    cy.intercept('POST', '**/api/v1/evaluations', (req) => {
+      req.reply(success({ ...req.body, evaluationId: 12 }))
+    }).as('createMissing')
+    cy.intercept('POST', '**/api/v1/evaluations/weeks/*/receipt', success(null))
+    openSubmission([saved], { ...inactiveStudent, enabled: true })
+    cy.contains('tr', 'John Smith').find('input').should('have.value', '8')
+    cy.contains('button', /^Submit$/).click()
+    cy.wait('@updateSaved').its('request.body.evaluateeId').should('eq', 4)
+    cy.wait('@createMissing').its('request.body.evaluateeId').should('eq', 5)
+    cy.contains('button', /^Update$/).should('be.visible')
+    cy.get('@createMissing.all').should('have.length', 1)
+  })
+
 })
