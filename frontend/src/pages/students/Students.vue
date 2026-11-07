@@ -46,6 +46,8 @@
             circle
             plain
             type="primary"
+            data-cy="edit-student"
+            aria-label="Edit student"
             @click.stop="showEditStudentDialog(row)"
           ></el-button>
         </template>
@@ -69,8 +71,10 @@
     <!-- Dialog for editing student -->
     <el-dialog v-model="dialogVisible" title="Edit a student" width="30%" destroy-on-close>
       <EditStudentForm
+        v-if="studentBeingEditedId !== undefined"
         :studentId="studentBeingEditedId"
         @close-dialog="closeDialog"
+        @student-changed="loadStudents"
       ></EditStudentForm>
     </el-dialog>
   </el-card>

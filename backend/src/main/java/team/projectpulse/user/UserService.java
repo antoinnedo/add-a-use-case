@@ -2,7 +2,7 @@ package team.projectpulse.user;
 
 import team.projectpulse.system.exception.ObjectNotFoundException;
 import team.projectpulse.user.resetpassword.ResetPasswordService;
-import jakarta.transaction.Transactional;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
@@ -33,6 +33,11 @@ public class UserService implements UserDetailsService {
                 .orElseThrow(() -> new UsernameNotFoundException("username " + username + " is not found.")); // Otherwise, throw an exception.
     }
 
+    @Transactional(readOnly = true)
+    public boolean isActiveAccount(Integer userId) {
+        return this.userRepository.existsByIdAndEnabledTrue(userId);
+    }
+
     public boolean checkEmailExists(String email) {
         return this.userRepository.findByEmail(email).isPresent();
     }
@@ -49,12 +54,14 @@ public class UserService implements UserDetailsService {
             throw new IllegalArgumentException("Password must contain at least one letter and one number, and at least 6 characters.");
         }
 
-        // If the token is valid, update the user's password.
-        this.userRepository.findByEmail(email)
-                .map(oldUser -> {
-                    oldUser.setPassword(this.passwordEncoder.encode(newPassword));
-                    return this.userRepository.save(oldUser);
-                }).orElseThrow(() -> new ObjectNotFoundException("email", email));
+        // A full entity write can restore stale account status after a concurrent deactivation.
+        int updated = this.userRepository.updatePasswordByEmail(email, this.passwordEncoder.encode(newPassword));
+        if (updated == 0) {
+            throw new ObjectNotFoundException("email", email);
+        }
+        if (updated != 1) {
+            throw new IllegalStateException("Password reset requires a unique email address.");
+        }
 
         this.resetPasswordService.deleteForgetPasswordToken(email); // Finally, delete the forget password token.
     }

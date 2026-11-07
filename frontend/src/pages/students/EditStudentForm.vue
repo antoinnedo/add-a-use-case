@@ -2,6 +2,7 @@
   <el-form
     ref="studentForm"
     :model="studentBeingEdited"
+    :disabled="!loadedStudent || saving || deactivating"
     :rules="rules"
     label-width="110px"
     style="padding-right: 30px"
@@ -13,9 +14,12 @@
     <el-form-item label="Username:" prop="username">
       <el-input v-model="studentBeingEdited.username"></el-input>
     </el-form-item>
-    <el-form-item label="Status:" prop="enabled">
+    <el-form-item v-if="loadedStudent" label="Status:">
+      <el-tag v-if="loadedStudent.enabled" type="success" data-cy="student-status">Enabled</el-tag>
       <el-switch
+        v-else
         v-model="studentBeingEdited.enabled"
+        data-cy="student-reactivate"
         inline-prompt
         active-text="Enabled"
         inactive-text="Disabled"
@@ -35,21 +39,79 @@
       <el-input v-model="studentBeingEdited.teamName" disabled></el-input>
     </el-form-item>
     <div style="display: flex; justify-content: end">
-      <el-button @click="$emit('close-dialog')"> Cancel </el-button>
-      <el-button type="primary" @click="updateExistingStudent()"> Confirm </el-button>
+      <el-button
+        v-if="loadedStudent?.enabled"
+        type="danger"
+        plain
+        data-cy="deactivate-open"
+        @click="deactivationVisible = true"
+      >
+        Deactivate
+      </el-button>
+      <el-button @click="$emit('close-dialog')">Cancel</el-button>
+      <el-button type="primary" data-cy="student-save" @click="updateExistingStudent">
+        Confirm
+      </el-button>
     </div>
   </el-form>
+  <el-dialog
+    v-model="deactivationVisible"
+    title="Deactivate student"
+    append-to-body
+    :show-close="!deactivating"
+    :close-on-press-escape="!deactivating"
+    :close-on-click-modal="!deactivating"
+  >
+    <div data-cy="deactivate-warning">
+      <p>Deactivate {{ loadedStudent?.firstName }} {{ loadedStudent?.lastName }}?</p>
+      <ul>
+        <li>The student cannot sign in or continue using the app with an existing session.</li>
+        <li>The student stays enrolled in the section and keeps any team assignment.</li>
+        <li>
+          Existing weekly activity reports and peer evaluations stay available in instructor
+          reports.
+        </li>
+        <li>The student will not receive submission reminders or appear as owing submissions.</li>
+        <li>
+          Teammates no longer need to evaluate this student and cannot submit or edit evaluations of
+          this student.
+        </li>
+      </ul>
+    </div>
+    <template #footer>
+      <el-button
+        :disabled="deactivating"
+        data-cy="deactivate-cancel"
+        @click="deactivationVisible = false"
+      >
+        Cancel
+      </el-button>
+      <el-button
+        type="danger"
+        :loading="deactivating"
+        :disabled="deactivating"
+        data-cy="deactivate-confirm"
+        @click="confirmDeactivation"
+      >
+        Confirm
+      </el-button>
+    </template>
+  </el-dialog>
 </template>
 
 <script setup lang="ts">
 import { ElMessage } from 'element-plus'
 import type { Student } from '@/apis/student/types'
 import type { FormInstance } from 'element-plus'
-import { findStudentById, updateStudent } from '@/apis/student'
+import { deactivateStudent, findStudentById, updateStudent } from '@/apis/student'
 import { ref, onMounted } from 'vue'
 
-const { studentId } = defineProps(['studentId'])
-const emit = defineEmits(['close-dialog'])
+const { studentId } = defineProps<{ studentId: number }>()
+const emit = defineEmits(['close-dialog', 'student-changed'])
+const loadedStudent = ref<Student>()
+const deactivationVisible = ref(false)
+const deactivating = ref(false)
+const saving = ref(false)
 
 // Note that the structure of the userData is NOT the same as the User interface since the roles are stored as an array
 const studentBeingEdited = ref<Student>({
@@ -74,7 +136,6 @@ const rules = {
       trigger: 'blur'
     }
   ],
-  enabled: [{ required: true, message: 'Please select the status of the user.', trigger: 'blur' }],
   firstName: [
     { required: true, message: 'Please provide the first name of the user.', trigger: 'blur' }
   ],
@@ -87,41 +148,61 @@ const rules = {
   ]
 }
 
-async function loadStudent(studentId: number) {
-  // Load the user to be edited
-  const result = await findStudentById(studentId)
-
-  studentBeingEdited.value.id = result.data.id as number
-  studentBeingEdited.value.username = result.data.username
-  studentBeingEdited.value.enabled = result.data.enabled
-  studentBeingEdited.value.firstName = result.data.firstName
-  studentBeingEdited.value.lastName = result.data.lastName
-  studentBeingEdited.value.email = result.data.email
-  studentBeingEdited.value.teamName = result.data.teamName
+function loadDetails(student: Student) {
+  loadedStudent.value = student
+  studentBeingEdited.value = { ...student }
 }
 
-onMounted(() => {
-  loadStudent(studentId) // Load the artifact to be edited
+onMounted(async () => {
+  try {
+    const result = await findStudentById(studentId)
+    loadDetails(result.data)
+  } catch {
+    // The shared request handler presents the failure.
+  }
 })
 
-async function updateExistingStudent() {
-  await studentForm.value!.validate() // Validate the form
-
-  const updatedStudent: Student = {
-    id: studentBeingEdited.value.id,
-    username: studentBeingEdited.value.username,
-    enabled: studentBeingEdited.value.enabled,
-    firstName: studentBeingEdited.value.firstName,
-    lastName: studentBeingEdited.value.lastName,
-    email: studentBeingEdited.value.email
+async function confirmDeactivation() {
+  if (!loadedStudent.value?.enabled || deactivating.value || saving.value) return
+  deactivating.value = true
+  try {
+    const result = await deactivateStudent(studentId)
+    if (!result.flag) {
+      ElMessage.error(result.message)
+      return
+    }
+    loadDetails(result.data)
+    deactivationVisible.value = false
+    ElMessage.success(result.message)
+    emit('student-changed')
+  } catch {
+    // The shared request handler presents the failure.
+  } finally {
+    deactivating.value = false
   }
-  console.log(updatedStudent)
-  // Call the API to update the user
-  await updateStudent(updatedStudent)
+}
 
-  ElMessage.success('Student updated successfully')
-  emit('close-dialog')
+async function updateExistingStudent() {
+  if (!loadedStudent.value || saving.value || deactivating.value) return
+  saving.value = true
+  try {
+    await studentForm.value!.validate()
+    const { id, username, enabled, firstName, lastName, email } = studentBeingEdited.value
+    const reactivate = loadedStudent.value.enabled === false && enabled === true
+    const result = await updateStudent(
+      { id, username, enabled, firstName, lastName, email },
+      reactivate
+    )
+    if (!result.flag) {
+      ElMessage.error(result.message)
+      return
+    }
+    ElMessage.success('Student updated successfully')
+    emit('close-dialog')
+  } catch {
+    // Form validation and the shared request handler present their respective failures.
+  } finally {
+    saving.value = false
+  }
 }
 </script>
-
-<style scoped lang="scss"></style>

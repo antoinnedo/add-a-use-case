@@ -26,6 +26,21 @@ public class StudentSecurityService {
         this.userUtils = userUtils;
     }
 
+    public boolean canAccessStudent(Integer studentId, boolean allowSelf) {
+        Integer callerId = this.userUtils.getUserId();
+        if (studentId == null || callerId == null) {
+            return false;
+        }
+
+        boolean admin = this.userUtils.hasRole("ROLE_admin");
+        boolean instructor = admin || this.userUtils.hasRole("ROLE_instructor");
+        if (!instructor && (!allowSelf || !studentId.equals(callerId))) {
+            return false;
+        }
+        return this.studentRepository.findAccessibleStudent(studentId, callerId, allowSelf, instructor, admin)
+                .isPresent();
+    }
+
     public boolean isStudentSelf(Integer studentId) {
         Integer studentIdFromJwt = this.userUtils.getUserId();
         return studentId.equals(studentIdFromJwt);

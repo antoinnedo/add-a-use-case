@@ -134,6 +134,35 @@ class ReminderIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void deactivationRemovesStudentAndTheirTeammatesObligationFromStatusAndReminders() throws Exception {
+        Student john = student("j.smith@abc.edu");
+        Student jerry = student("j.moon@abc.edu");
+        this.entityManager.createQuery("delete from Rating r where r.peerEvaluation.evaluator = :john and r.peerEvaluation.evaluatee = :jerry and r.peerEvaluation.week = :week")
+                .setParameter("john", john).setParameter("jerry", jerry).setParameter("week", WEEK).executeUpdate();
+        this.entityManager.createQuery("delete from PeerEvaluation e where e.evaluator = :john and e.evaluatee = :jerry and e.week = :week")
+                .setParameter("john", john).setParameter("jerry", jerry).setParameter("week", WEEK).executeUpdate();
+        submissionStatus("PEER_EVALUATION").andExpect(jsonPath("$.data.teams[0].students[0].id").value(john.getId()));
+        submissionStatus("WEEKLY_ACTIVITY_REPORT").andExpect(jsonPath("$.data.teams[0].students[0].id").value(jerry.getId()));
+
+        this.mockMvc.perform(post(this.baseUrl + "/students/{id}/deactivate", jerry.getId())
+                        .header(HttpHeaders.AUTHORIZATION, this.instructorBillToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.enabled").value(false));
+
+        for (String item : List.of("WEEKLY_ACTIVITY_REPORT", "PEER_EVALUATION")) {
+            submissionStatus(item).andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.teams", hasSize(2)))
+                    .andExpect(jsonPath("$.data.teams[0].teamName").value("Team2"));
+            sendReminders(this.instructorBillToken, item).andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.sent").value(8));
+        }
+        ArgumentCaptor<String> recipients = ArgumentCaptor.forClass(String.class);
+        verify(this.emailService, times(16)).sendReminderEmail(recipients.capture(), anyString(), anyString());
+        assertThat(recipients.getAllValues()).contains("w.allen@abc.edu")
+                .doesNotContain("j.smith@abc.edu", "j.moon@abc.edu");
+    }
+
+    @Test
     void testSubmissionStatusListsOwingStudentsGroupedByTeam() throws Exception {
         this.mockMvc.perform(get(this.baseUrl + "/sections/2/submission-status").param("item", "WEEKLY_ACTIVITY_REPORT")
                         .header(HttpHeaders.AUTHORIZATION, this.instructorBillToken))

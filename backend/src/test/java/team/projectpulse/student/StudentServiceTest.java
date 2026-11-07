@@ -1,11 +1,9 @@
 package team.projectpulse.student;
 
-import org.junit.jupiter.api.AfterEach;
-import team.projectpulse.instructor.Instructor;
 import team.projectpulse.section.Section;
 import team.projectpulse.section.SectionRepository;
 import team.projectpulse.system.UserUtils;
-import team.projectpulse.user.MyUserPrincipal;
+import team.projectpulse.system.exception.ObjectNotFoundException;
 import team.projectpulse.user.userinvitation.UserInvitationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -18,9 +16,6 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.context.SecurityContext;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.util.List;
@@ -28,6 +23,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.*;
@@ -68,11 +64,6 @@ class StudentServiceTest {
         this.students = List.of(john, eric, jerry, woody, amanda, cora, agustin, mavis, mary, rosendo);
     }
 
-    @AfterEach
-    void tearDown() {
-        SecurityContextHolder.clearContext(); // Clear the security context after each test to avoid interference between tests
-    }
-
     @Test
     void testFindByCriteria() {
         // Given
@@ -92,7 +83,8 @@ class StudentServiceTest {
     void testFindStudentById() {
         // Given
         Student john = this.students.get(0);
-        given(this.studentRepository.findById(1)).willReturn(Optional.of(john));
+        given(this.userUtils.getUserId()).willReturn(1);
+        given(this.studentRepository.findAccessibleStudent(1, 1, true, false, false)).willReturn(Optional.of(john));
 
         // When
         Student result = this.studentService.findStudentById(1);
@@ -127,19 +119,13 @@ class StudentServiceTest {
     void testStudentUpdateOwnInfo() {
         // Given
         Student update = new Student("john", "John (updated)", "Smith (updated)", "j.smith@abc.edu (updated)", "", false, "admin student");
-        given(this.studentRepository.findById(1)).willReturn(Optional.of(this.students.get(0)));
+        given(this.userUtils.getUserId()).willReturn(1);
+        given(this.studentRepository.findAccessibleStudentForUpdate(1, 1, true, false, false))
+                .willReturn(Optional.of(this.students.get(0)));
         given(this.studentRepository.save(any(Student.class))).willReturn(this.students.get(0));
 
-        Instructor instructor = new Instructor();
-        instructor.setRoles("student");
-        MyUserPrincipal myUserPrincipal = new MyUserPrincipal(instructor);
-
-        SecurityContext securityContext = SecurityContextHolder.createEmptyContext();
-        securityContext.setAuthentication(new UsernamePasswordAuthenticationToken(myUserPrincipal, null, myUserPrincipal.getAuthorities()));
-        SecurityContextHolder.setContext(securityContext);
-
         // When
-        Student result = this.studentService.updateStudent(1, update);
+        Student result = this.studentService.updateStudent(1, update, false);
 
         // Then
         assertThat(result.getUsername()).isEqualTo(update.getUsername());
@@ -151,30 +137,70 @@ class StudentServiceTest {
     }
 
     @Test
-    void testInstructorUpdatesStudent() {
-        // Given
-        Student update = new Student("john", "John (updated)", "Smith (updated)", "j.smith@abc.edu (updated)", "", false, "admin student");
-        given(this.studentRepository.findById(1)).willReturn(Optional.of(this.students.get(0)));
-        given(this.studentRepository.save(any(Student.class))).willReturn(this.students.get(0));
+    void instructorCannotDeactivateOrChangeProfileThroughGenericUpdate() {
+        Student john = this.students.getFirst();
+        Student update = new Student("new-username", "New first", "New last", "new@abc.edu", "", false, "student");
+        given(this.userUtils.getUserId()).willReturn(2);
+        given(this.userUtils.hasRole("ROLE_admin")).willReturn(false);
+        given(this.userUtils.hasRole("ROLE_instructor")).willReturn(true);
+        given(this.studentRepository.findAccessibleStudentForUpdate(1, 2, true, true, false))
+                .willReturn(Optional.of(john));
 
-        Instructor instructor = new Instructor();
-        instructor.setRoles("instructor");
-        MyUserPrincipal myUserPrincipal = new MyUserPrincipal(instructor);
+        assertThatThrownBy(() -> this.studentService.updateStudent(1, update, false))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Deactivate action");
+        assertThat(john.isEnabled()).isTrue();
+        assertThat(john.getUsername()).isEqualTo("john");
+        assertThat(john.getFirstName()).isEqualTo("John");
+        assertThat(john.getLastName()).isEqualTo("Smith");
+        assertThat(john.getEmail()).isEqualTo("j.smith@abc.edu");
+        verify(this.studentRepository, never()).save(any());
+    }
 
-        SecurityContext securityContext = SecurityContextHolder.createEmptyContext();
-        securityContext.setAuthentication(new UsernamePasswordAuthenticationToken(myUserPrincipal, null, myUserPrincipal.getAuthorities()));
-        SecurityContextHolder.setContext(securityContext);
+    @Test
+    void deactivatesStudentWithoutATeam() {
+        Student john = this.students.getFirst();
+        Section section = new Section();
+        section.addStudent(john);
+        given(this.userUtils.getUserId()).willReturn(2);
+        given(this.userUtils.hasRole("ROLE_admin")).willReturn(false);
+        given(this.userUtils.hasRole("ROLE_instructor")).willReturn(true);
+        given(this.studentRepository.findAccessibleStudentForUpdate(1, 2, false, true, false))
+                .willReturn(Optional.of(john));
+        given(this.studentRepository.save(john)).willReturn(john);
 
-        // When
-        Student result = this.studentService.updateStudent(1, update);
+        StudentService.DeactivationResult result = this.studentService.deactivateStudent(1);
 
-        // Then
-        assertThat(result.getUsername()).isEqualTo(update.getUsername());
-        assertThat(result.getFirstName()).isEqualTo(update.getFirstName());
-        assertThat(result.getLastName()).isEqualTo(update.getLastName());
-        assertThat(result.getEmail()).isEqualTo(update.getEmail());
-//        assertThat(result.getRoles()).isEqualTo(update.getRoles());
-        assertThat(result.isEnabled()).isEqualTo(update.isEnabled());
+        assertThat(result.changed()).isTrue();
+        assertThat(result.student().isEnabled()).isFalse();
+        assertThat(result.student().getTeam()).isNull();
+        assertThat(result.student().getSection()).isSameAs(section);
+    }
+
+    @Test
+    void alreadyInactiveStudentIsNotSavedAgain() {
+        Student john = this.students.getFirst();
+        john.setEnabled(false);
+        given(this.userUtils.getUserId()).willReturn(2);
+        given(this.userUtils.hasRole("ROLE_admin")).willReturn(false);
+        given(this.userUtils.hasRole("ROLE_instructor")).willReturn(true);
+        given(this.studentRepository.findAccessibleStudentForUpdate(1, 2, false, true, false))
+                .willReturn(Optional.of(john));
+
+        StudentService.DeactivationResult result = this.studentService.deactivateStudent(1);
+
+        assertThat(result.changed()).isFalse();
+        assertThat(result.student().isEnabled()).isFalse();
+        verify(this.studentRepository, never()).save(any());
+    }
+
+    @Test
+    void studentCannotDeactivateSelfEvenThroughService() {
+        given(this.userUtils.getUserId()).willReturn(1);
+
+        assertThatThrownBy(() -> this.studentService.deactivateStudent(1))
+                .isInstanceOf(ObjectNotFoundException.class);
+        verifyNoInteractions(this.studentRepository);
     }
 
     @Test

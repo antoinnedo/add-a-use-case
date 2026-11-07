@@ -9,8 +9,6 @@ import jakarta.transaction.Transactional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -72,7 +70,8 @@ public class StudentService {
     }
 
     public Student findStudentById(Integer studentId) {
-        return this.studentRepository.findById(studentId)
+        CallerScope caller = currentCaller(studentId);
+        return this.studentRepository.findAccessibleStudent(studentId, caller.id(), true, caller.instructor(), caller.admin())
                 .orElseThrow(() -> new ObjectNotFoundException("student", studentId));
     }
 
@@ -104,26 +103,60 @@ public class StudentService {
         return savedStudent;
     }
 
-    public Student updateStudent(Integer studentId, Student update) {
-        Student oldStudent = this.studentRepository.findById(studentId)
-                .orElseThrow(() -> new ObjectNotFoundException("student", studentId));
+    public record DeactivationResult(Student student, boolean changed) {}
 
-        // If the user is not an admin, then the user can only update her username, first rubricName, last rubricName, and email
+    public DeactivationResult deactivateStudent(Integer studentId) {
+        CallerScope caller = currentCaller(studentId);
+        if (!caller.instructor()) {
+            throw new ObjectNotFoundException("student", studentId);
+        }
+
+        Student student = findForUpdate(studentId, caller, false);
+        if (!student.isEnabled()) {
+            return new DeactivationResult(student, false);
+        }
+
+        student.setEnabled(false);
+        return new DeactivationResult(this.studentRepository.save(student), true);
+    }
+
+    public Student updateStudent(Integer studentId, Student update, boolean reactivate) {
+        CallerScope caller = currentCaller(studentId);
+        // Serialize profile writes with deactivation so both check the current persisted status.
+        Student oldStudent = findForUpdate(studentId, caller, true);
+        boolean staff = caller.instructor();
+        if (staff && oldStudent.isEnabled() && !update.isEnabled()) {
+            throw new IllegalArgumentException("Use the Deactivate action to deactivate a student.");
+        }
+
         oldStudent.setUsername(update.getUsername());
         oldStudent.setFirstName(update.getFirstName());
         oldStudent.setLastName(update.getLastName());
         oldStudent.setEmail(update.getEmail());
-
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-
-        // If the user is an admin, then the user can update all the fields
-        if (authentication.getAuthorities().stream().anyMatch(grantedAuthority -> grantedAuthority.getAuthority().equals("ROLE_instructor"))) {
-            oldStudent.setEnabled(update.isEnabled());
-//            oldStudent.setRoles(update.getRoles());
+        // An enabled value from an older profile form does not express reactivation intent.
+        if (staff && reactivate && update.isEnabled()) {
+            oldStudent.setEnabled(true);
         }
 
         return this.studentRepository.save(oldStudent);
     }
+
+    private Student findForUpdate(Integer studentId, CallerScope caller, boolean allowSelf) {
+        return this.studentRepository.findAccessibleStudentForUpdate(
+                        studentId, caller.id(), allowSelf, caller.instructor(), caller.admin())
+                .orElseThrow(() -> new ObjectNotFoundException("student", studentId));
+    }
+
+    private CallerScope currentCaller(Integer studentId) {
+        Integer callerId = this.userUtils.getUserId();
+        if (callerId == null || studentId == null) {
+            throw new ObjectNotFoundException("student", studentId);
+        }
+        boolean admin = this.userUtils.hasRole("ROLE_admin");
+        return new CallerScope(callerId, admin || this.userUtils.hasRole("ROLE_instructor"), admin);
+    }
+
+    private record CallerScope(Integer id, boolean instructor, boolean admin) {}
 
     public void deleteStudent(Integer studentId) {
         this.studentRepository.findById(studentId)
