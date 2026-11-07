@@ -436,7 +436,9 @@ class EvaluationServiceTest {
         // A replacement evaluatee in the payload must not determine eligibility.
         PeerEvaluation update = new PeerEvaluation("2023-W31", john, john, List.of(), "updated public", "updated private");
         given(this.evaluationRepository.findById(1)).willReturn(Optional.of(stored));
-        given(this.studentRepository.existsByIdAndEnabledTrue(eric.getId())).willReturn(false);
+        // Distinguish the active payload student from the inactive stored evaluatee.
+        given(this.studentRepository.existsByIdAndEnabledTrue(anyInt()))
+                .willAnswer(invocation -> john.getId().equals(invocation.getArgument(0)));
 
         assertThatThrownBy(() -> this.evaluationService.updatePeerEvaluation(1, update))
                 .isInstanceOf(PeerEvaluationIllegalArgumentException.class)
