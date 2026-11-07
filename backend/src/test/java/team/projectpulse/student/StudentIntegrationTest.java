@@ -276,12 +276,33 @@ class StudentIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void instructorCanStillSaveProfileAndReactivateInactiveStudent() throws Exception {
+    void staleProfileSaveUpdatesProfileWithoutReactivatingStudent() throws Exception {
+        String staleProfile = johnProfileUpdate(true);
+        this.mockMvc.perform(post(this.baseUrl + "/students/4/deactivate")
+                        .header(HttpHeaders.AUTHORIZATION, this.instructorBillToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.enabled").value(false));
+
+        this.mockMvc.perform(put(this.baseUrl + "/students/4")
+                        .contentType(MediaType.APPLICATION_JSON).content(staleProfile)
+                        .header(HttpHeaders.AUTHORIZATION, this.instructorBillToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.firstName").value("Updated"))
+                .andExpect(jsonPath("$.data.enabled").value(false));
+
+        this.entityManager.flush();
+        this.entityManager.clear();
+        this.mockMvc.perform(post(this.baseUrl + "/users/login").with(httpBasic("j.smith@abc.edu", "123456")))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void instructorCanExplicitlyReactivateWhileSavingProfile() throws Exception {
         this.entityManager.find(Student.class, 4).setEnabled(false);
         this.entityManager.flush();
         this.entityManager.clear();
 
-        this.mockMvc.perform(put(this.baseUrl + "/students/4")
+        this.mockMvc.perform(put(this.baseUrl + "/students/4").param("reactivate", "true")
                         .contentType(MediaType.APPLICATION_JSON).content(johnProfileUpdate(true))
                         .header(HttpHeaders.AUTHORIZATION, this.instructorBillToken))
                 .andExpect(status().isOk())

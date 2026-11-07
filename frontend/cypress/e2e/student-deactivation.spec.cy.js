@@ -138,16 +138,34 @@ describe('Student deactivation', () => {
     cy.get('[data-cy=student-status]').should('have.text', 'Enabled')
   })
 
-  it('keeps the existing profile save and reactivation control (T14)', () => {
+  it('omits reactivation intent when saving a profile opened before deactivation (T14)', () => {
+    cy.intercept('PUT', '**/api/v1/students/4*', (req) => {
+      req.reply(success({ ...student, ...req.body, enabled }))
+    }).as('profileSave')
+    openProfile()
+    cy.then(() => { enabled = false })
+    cy.get('[data-cy=student-save]').click()
+    cy.wait('@profileSave').then(({ request }) => {
+      expect(request.body.enabled).to.eq(true)
+      expect(request.query).not.to.have.property('reactivate')
+    })
+    cy.wait('@students')
+    cy.contains('tr', 'John').should('contain', 'Disabled')
+  })
+
+  it('sends explicit reactivation when an instructor switches an inactive student back on (T14)', () => {
     enabled = false
-    cy.intercept('PUT', '**/api/v1/students/4', (req) => {
-      enabled = req.body.enabled
-      req.reply(success({ ...student, ...req.body }))
+    cy.intercept('PUT', '**/api/v1/students/4*', (req) => {
+      enabled = req.query.reactivate === 'true' && req.body.enabled
+      req.reply(success({ ...student, ...req.body, enabled }))
     }).as('profileSave')
     openProfile()
     cy.get('[data-cy=student-reactivate]').click()
     cy.get('[data-cy=student-save]').click()
-    cy.wait('@profileSave').its('request.body.enabled').should('eq', true)
+    cy.wait('@profileSave').then(({ request }) => {
+      expect(request.body.enabled).to.eq(true)
+      expect(request.query.reactivate).to.eq('true')
+    })
     cy.wait('@students')
     cy.contains('tr', 'John').should('contain', 'Enabled')
   })

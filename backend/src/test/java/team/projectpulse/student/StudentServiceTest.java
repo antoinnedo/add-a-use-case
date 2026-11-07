@@ -125,7 +125,7 @@ class StudentServiceTest {
         given(this.studentRepository.save(any(Student.class))).willReturn(this.students.get(0));
 
         // When
-        Student result = this.studentService.updateStudent(1, update);
+        Student result = this.studentService.updateStudent(1, update, false);
 
         // Then
         assertThat(result.getUsername()).isEqualTo(update.getUsername());
@@ -146,7 +146,7 @@ class StudentServiceTest {
         given(this.studentRepository.findAccessibleStudentForUpdate(1, 2, true, true, false))
                 .willReturn(Optional.of(john));
 
-        assertThatThrownBy(() -> this.studentService.updateStudent(1, update))
+        assertThatThrownBy(() -> this.studentService.updateStudent(1, update, false))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Deactivate action");
         assertThat(john.isEnabled()).isTrue();

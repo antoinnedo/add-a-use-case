@@ -188,7 +188,11 @@ async function updateExistingStudent() {
   try {
     await studentForm.value!.validate()
     const { id, username, enabled, firstName, lastName, email } = studentBeingEdited.value
-    const result = await updateStudent({ id, username, enabled, firstName, lastName, email })
+    const reactivate = loadedStudent.value.enabled === false && enabled === true
+    const result = await updateStudent(
+      { id, username, enabled, firstName, lastName, email },
+      reactivate
+    )
     if (!result.flag) {
       ElMessage.error(result.message)
       return

@@ -120,7 +120,7 @@ public class StudentService {
         return new DeactivationResult(this.studentRepository.save(student), true);
     }
 
-    public Student updateStudent(Integer studentId, Student update) {
+    public Student updateStudent(Integer studentId, Student update, boolean reactivate) {
         CallerScope caller = currentCaller(studentId);
         // Serialize profile writes with deactivation so both check the current persisted status.
         Student oldStudent = findForUpdate(studentId, caller, true);
@@ -133,8 +133,9 @@ public class StudentService {
         oldStudent.setFirstName(update.getFirstName());
         oldStudent.setLastName(update.getLastName());
         oldStudent.setEmail(update.getEmail());
-        if (staff) {
-            oldStudent.setEnabled(update.isEnabled());
+        // An enabled value from an older profile form does not express reactivation intent.
+        if (staff && reactivate && update.isEnabled()) {
+            oldStudent.setEnabled(true);
         }
 
         return this.studentRepository.save(oldStudent);

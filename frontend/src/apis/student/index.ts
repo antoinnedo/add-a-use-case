@@ -32,10 +32,11 @@ export const findStudentsByTeamId = (teamId: number) =>
 export const createStudent = (newStudent: Student, params: RegistrationParams) =>
   request.post<any, CreateStudentResponse>(API.STUDENTS_ENDPOINT, newStudent, { params })
 
-export const updateStudent = (updatedStudent: Student) =>
+export const updateStudent = (updatedStudent: Student, reactivate = false) =>
   request.put<any, UpdateStudentResponse>(
     `${API.STUDENTS_ENDPOINT}/${updatedStudent.id}`,
-    updatedStudent
+    updatedStudent,
+    reactivate ? { params: { reactivate: true } } : undefined
   )
 
 export const deactivateStudent = (id: number) =>
