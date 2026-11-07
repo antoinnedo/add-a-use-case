@@ -174,15 +174,18 @@ onMounted(async () => {
   sectionId.value = (userInfoStore.userInfo as Student).sectionId
   await loadCriteria()
   loading.value = true
-  prepareStartingPeerEvaluations()
-  loading.value = false
+  try {
+    await prepareStartingPeerEvaluations()
+  } finally {
+    loading.value = false
+  }
 })
 
 // Load activities based on the search criteria
 async function loadStudents() {
   // On the back end, the page number starts from 0, so subtract 1 here
   const result: FindStudentByTeamIdResponse = await findStudentsByTeamId(teamId.value)
-  students.value = result.data
+  students.value = result.data.filter((student) => student.enabled)
 }
 
 // Load criteria information
@@ -202,9 +205,14 @@ async function prepareStartingPeerEvaluations() {
     previousWeek.value
   )
 
-  // If the student has already submitted evaluations for the current week, load them
-  if (result.data.length > 0) {
-    peerEvalutions.value = result.data
+  const activeIds = new Set(students.value.map((student) => student.id))
+  const editableEvaluations = result.data.filter((evaluation) =>
+    activeIds.has(evaluation.evaluateeId)
+  )
+
+  // Only evaluations of active teammates are editable in this form.
+  if (editableEvaluations.length > 0) {
+    peerEvalutions.value = editableEvaluations
     isNewSubmission = false
   } else {
     // If not, create a new set of evaluations

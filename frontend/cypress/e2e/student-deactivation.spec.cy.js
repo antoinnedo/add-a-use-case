@@ -152,3 +152,41 @@ describe('Student deactivation', () => {
     cy.contains('tr', 'John').should('contain', 'Enabled')
   })
 })
+
+describe('Peer evaluation submission after deactivation', () => {
+  const inactiveStudent = { ...student, id: 5, firstName: 'Eric', lastName: 'Hudson', enabled: false }
+
+  function openSubmission(existing) {
+    cy.intercept('GET', '**/api/v1/students/teams/1', success([student, inactiveStudent]))
+    cy.intercept('GET', '**/api/v1/sections/2', success({ rubricId: 3 }))
+    cy.intercept('GET', '**/api/v1/rubrics/3', success({
+      criteria: [{ criterionId: 1, criterion: 'Work', description: 'Quality of work', maxScore: 10 }]
+    }))
+    cy.intercept('GET', '**/api/v1/evaluations/evaluators/4/week/*', success(existing)).as('evaluations')
+    visitAs('/evaluations/submit-evaluations', student)
+    cy.wait('@evaluations')
+    cy.contains('tr', 'John Smith').should('be.visible')
+    cy.contains('tr', 'Eric Hudson').should('not.exist')
+  }
+
+  it('omits an inactive teammate from new submission targets (T16)', () => {
+    openSubmission([])
+    cy.contains('button', /^Submit$/).scrollIntoView().should('be.visible')
+  })
+
+  it('keeps edits for active students and never sends an update for an inactive teammate (T16)', () => {
+    const evaluation = (target, evaluationId) => ({
+      evaluationId,
+      evaluateeId: target.id,
+      evaluateeName: `${target.firstName} ${target.lastName}`,
+      ratings: [{ criterionId: 1, actualScore: 8 }]
+    })
+    const current = evaluation(student, 10)
+    cy.intercept('PUT', '**/api/v1/evaluations/*', success(current)).as('saveEvaluation')
+    openSubmission([current, evaluation(inactiveStudent, 11)])
+    cy.contains('button', /^Update$/).click()
+    cy.wait('@saveEvaluation').its('request.body.evaluateeId').should('eq', 4)
+    cy.contains('.el-message--success', 'Peer evaluations updated successfully').should('be.visible')
+    cy.get('@saveEvaluation.all').should('have.length', 1)
+  })
+})
