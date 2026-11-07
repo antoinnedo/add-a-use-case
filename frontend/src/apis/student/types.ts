@@ -96,6 +96,8 @@ export interface UpdateStudentResponse {
   data: Student
 }
 
+export type DeactivateStudentResponse = FindStudentByIdResponse
+
 export interface DeleteStudentResponse {
   flag: boolean
   code: number
