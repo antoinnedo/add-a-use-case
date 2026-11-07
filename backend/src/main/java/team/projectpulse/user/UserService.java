@@ -2,7 +2,7 @@ package team.projectpulse.user;
 
 import team.projectpulse.system.exception.ObjectNotFoundException;
 import team.projectpulse.user.resetpassword.ResetPasswordService;
-import jakarta.transaction.Transactional;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
@@ -31,6 +31,11 @@ public class UserService implements UserDetailsService {
         return this.userRepository.findByUsername(username) // First, we need to find this user from database.
                 .map(peerEvaluationUser -> new MyUserPrincipal(peerEvaluationUser)) // If found, wrap the returned user instance in a MyUserPrincipal instance.
                 .orElseThrow(() -> new UsernameNotFoundException("username " + username + " is not found.")); // Otherwise, throw an exception.
+    }
+
+    @Transactional(readOnly = true)
+    public boolean isActiveAccount(Integer userId) {
+        return this.userRepository.existsByIdAndEnabledTrue(userId);
     }
 
     public boolean checkEmailExists(String email) {

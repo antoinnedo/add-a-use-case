@@ -10,6 +10,8 @@ import java.util.Optional;
 @Repository
 public interface UserRepository extends JpaRepository<PeerEvaluationUser, Integer> {
 
+    boolean existsByIdAndEnabledTrue(Integer userId);
+
     Optional<PeerEvaluationUser> findByUsername(String username);
 
     Optional<PeerEvaluationUser> findByEmail(String email);
