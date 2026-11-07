@@ -1,5 +1,6 @@
 package team.projectpulse.student;
 
+import jakarta.persistence.EntityManager;
 import tools.jackson.databind.json.JsonMapper;
 import team.projectpulse.AbstractIntegrationTest;
 import team.projectpulse.system.StatusCode;
@@ -26,6 +27,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultHandlers.print;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @DisplayName("Integration tests for Student API endpoints")
 class StudentIntegrationTest extends AbstractIntegrationTest {
@@ -35,6 +37,9 @@ class StudentIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired
     JsonMapper jsonMapper;
+
+    @Autowired
+    EntityManager entityManager;
 
     String adminToken;
 
@@ -250,6 +255,44 @@ class StudentIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.data.password").doesNotExist())
                 .andExpect(jsonPath("$.data.enabled").value(true)) // The enabled status should not be changed.
                 .andExpect(jsonPath("$.data.roles").value("student")); // The role should not be changed.
+    }
+
+    @Test
+    void instructorCannotDeactivateAStudentBySavingProfileEdits() throws Exception {
+        this.mockMvc.perform(put(this.baseUrl + "/students/4")
+                        .contentType(MediaType.APPLICATION_JSON).content(johnProfileUpdate(false))
+                        .header(HttpHeaders.AUTHORIZATION, this.instructorBillToken))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.flag").value(false))
+                .andExpect(jsonPath("$.message").value(Matchers.containsString("Deactivate action")));
+
+        this.entityManager.flush();
+        this.entityManager.clear();
+        this.mockMvc.perform(get(this.baseUrl + "/students/4")
+                        .header(HttpHeaders.AUTHORIZATION, this.instructorBillToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.firstName").value("John"))
+                .andExpect(jsonPath("$.data.enabled").value(true));
+    }
+
+    @Test
+    void instructorCanStillSaveProfileAndReactivateInactiveStudent() throws Exception {
+        this.entityManager.find(Student.class, 4).setEnabled(false);
+        this.entityManager.flush();
+        this.entityManager.clear();
+
+        this.mockMvc.perform(put(this.baseUrl + "/students/4")
+                        .contentType(MediaType.APPLICATION_JSON).content(johnProfileUpdate(true))
+                        .header(HttpHeaders.AUTHORIZATION, this.instructorBillToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.firstName").value("Updated"))
+                .andExpect(jsonPath("$.data.enabled").value(true));
+    }
+
+    private String johnProfileUpdate(boolean enabled) {
+        return this.jsonMapper.writeValueAsString(Map.of(
+                "username", "j.smith@abc.edu", "firstName", "Updated",
+                "lastName", "Smith", "email", "j.smith@abc.edu", "enabled", enabled));
     }
 
     @Test

@@ -30,6 +30,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
@@ -305,6 +306,7 @@ class EvaluationServiceTest {
         given(this.clock.getZone()).willReturn(fixedClock.getZone());
 
         PeerEvaluation newPeerEvaluation = new PeerEvaluation("2023-W31", amanda, woody, List.of(), "public comment", "private comment");
+        given(this.studentRepository.existsByIdAndEnabledTrue(woody.getId())).willReturn(true);
         given(this.evaluationRepository.save(newPeerEvaluation)).willReturn(newPeerEvaluation);
 
         // When
@@ -403,6 +405,7 @@ class EvaluationServiceTest {
         given(this.clock.getZone()).willReturn(fixedClock.getZone());
 
         PeerEvaluation newPeerEvaluation = new PeerEvaluation("2023-W31", john, eric, List.of(), "public comment", "private comment");
+        given(this.studentRepository.existsByIdAndEnabledTrue(eric.getId())).willReturn(true);
         given(this.evaluationRepository.findByWeekAndEvaluatorIdAndEvaluateeId("2023-W31", 3, 4)).willReturn(Optional.of(newPeerEvaluation));
 
         // When
@@ -412,6 +415,41 @@ class EvaluationServiceTest {
         assertThat(throwable)
                 .isInstanceOf(PeerEvaluationIllegalArgumentException.class)
                 .hasMessage("You have already submitted an evaluation for " + newPeerEvaluation.getEvaluatee().getFirstName() + " in this week.");
+    }
+
+    @Test
+    void cannotEvaluateAnInactiveTeammate() {
+        mockOpenWeek31();
+        PeerEvaluation evaluation = new PeerEvaluation("2023-W31", john, eric, List.of(), "", "");
+        given(this.studentRepository.existsByIdAndEnabledTrue(eric.getId())).willReturn(false);
+
+        assertThatThrownBy(() -> this.evaluationService.addPeerEvaluation(evaluation))
+                .isInstanceOf(PeerEvaluationIllegalArgumentException.class)
+                .hasMessageContaining("inactive");
+        verify(this.evaluationRepository, never()).save(any(PeerEvaluation.class));
+    }
+
+    @Test
+    void cannotEditAnInactiveEvaluateesStoredEvaluationWithAnActiveEvaluateeInTheBody() {
+        mockOpenWeek31();
+        PeerEvaluation stored = new PeerEvaluation("2023-W31", john, eric, List.of(), "original public", "original private");
+        // A replacement evaluatee in the payload must not determine eligibility.
+        PeerEvaluation update = new PeerEvaluation("2023-W31", john, john, List.of(), "updated public", "updated private");
+        given(this.evaluationRepository.findById(1)).willReturn(Optional.of(stored));
+        given(this.studentRepository.existsByIdAndEnabledTrue(eric.getId())).willReturn(false);
+
+        assertThatThrownBy(() -> this.evaluationService.updatePeerEvaluation(1, update))
+                .isInstanceOf(PeerEvaluationIllegalArgumentException.class)
+                .hasMessageContaining("inactive");
+        assertThat(stored.getPublicComment()).isEqualTo("original public");
+        assertThat(stored.getPrivateComment()).isEqualTo("original private");
+        verify(this.evaluationRepository, never()).save(any(PeerEvaluation.class));
+    }
+
+    private void mockOpenWeek31() {
+        Clock fixedClock = Clock.fixed(Instant.parse("2023-08-08T12:00:00Z"), ZoneOffset.UTC);
+        given(this.clock.instant()).willReturn(fixedClock.instant());
+        given(this.clock.getZone()).willReturn(fixedClock.getZone());
     }
 
     @Test
@@ -430,6 +468,7 @@ class EvaluationServiceTest {
         update.setPeerEvaluationId(1);
 
         given(this.evaluationRepository.findById(1)).willReturn(Optional.of(oldPeerEvaluation));
+        given(this.studentRepository.existsByIdAndEnabledTrue(eric.getId())).willReturn(true);
         given(this.evaluationRepository.save(oldPeerEvaluation)).willReturn(oldPeerEvaluation);
 
         // When

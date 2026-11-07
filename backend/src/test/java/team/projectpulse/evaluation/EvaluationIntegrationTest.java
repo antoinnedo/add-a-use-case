@@ -6,6 +6,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import team.projectpulse.AbstractIntegrationTest;
 import team.projectpulse.evaluation.dto.PeerEvaluationDto;
 import team.projectpulse.evaluation.dto.RatingDto;
+import team.projectpulse.student.Student;
 import team.projectpulse.system.StatusCode;
 import org.hamcrest.Matchers;
 import org.json.JSONObject;
@@ -23,9 +24,13 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 
 import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.BDDMockito.given;
@@ -33,6 +38,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultHandlers.print;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @DisplayName("Integration tests for Evaluation API endpoints")
 public class EvaluationIntegrationTest extends AbstractIntegrationTest {
@@ -135,6 +141,68 @@ public class EvaluationIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.data.privateComment").value("Keep it up"))
                 .andExpect(jsonPath("$.data.createdAt").isNotEmpty())
                 .andExpect(jsonPath("$.data.updatedAt").isNotEmpty());
+    }
+
+    @Test
+    void cannotCreateEvaluationForInactiveTeammate() throws Exception {
+        this.entityManager.find(Student.class, 5).setEnabled(false);
+        this.entityManager.flush();
+        useSubmissionTime("2023-09-15T12:00:00Z"); // The open evaluation week is W36.
+
+        this.mockMvc.perform(post(this.baseUrl + "/evaluations")
+                        .contentType(MediaType.APPLICATION_JSON).content(evaluationOf("2023-W36", 5))
+                        .header(HttpHeaders.AUTHORIZATION, this.studentJohnToken))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(Matchers.containsString("inactive")));
+
+        assertThat(this.evaluationRepository.findByWeekAndEvaluatorIdAndEvaluateeId("2023-W36", 4, 5)).isEmpty();
+    }
+
+    @Test
+    void cannotEditEvaluationForInactiveTeammateEvenWithDifferentEvaluateeInPayload() throws Exception {
+        PeerEvaluation original = this.evaluationRepository.findById(1).orElseThrow();
+        assertThat(original.getEvaluator().getId()).isEqualTo(4);
+        assertThat(original.getEvaluatee().getId()).isEqualTo(5);
+        var scores = scoresByCriterion(original);
+        var total = original.getTotalScore();
+        var publicComment = original.getPublicComment();
+        var privateComment = original.getPrivateComment();
+        original.getEvaluatee().setEnabled(false);
+        this.entityManager.flush();
+        this.entityManager.clear();
+        useSubmissionTime("2023-08-08T12:00:00Z"); // The stored evaluation's W31 is open.
+
+        this.mockMvc.perform(put(this.baseUrl + "/evaluations/1")
+                        .contentType(MediaType.APPLICATION_JSON).content(evaluationOf("2023-W31", 4))
+                        .header(HttpHeaders.AUTHORIZATION, this.studentJohnToken))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(Matchers.containsString("inactive")));
+
+        this.entityManager.flush();
+        this.entityManager.clear();
+        PeerEvaluation persisted = this.evaluationRepository.findById(1).orElseThrow();
+        assertThat(scoresByCriterion(persisted)).isEqualTo(scores);
+        assertThat(persisted.getTotalScore()).isEqualTo(total);
+        assertThat(persisted.getPublicComment()).isEqualTo(publicComment);
+        assertThat(persisted.getPrivateComment()).isEqualTo(privateComment);
+    }
+
+    private Map<Integer, Double> scoresByCriterion(PeerEvaluation evaluation) {
+        return evaluation.getRatings().stream().collect(Collectors.toMap(
+                rating -> rating.getCriterion().getCriterionId(), Rating::getActualScore));
+    }
+
+    private void useSubmissionTime(String instant) {
+        given(this.clock.instant()).willReturn(Instant.parse(instant));
+        given(this.clock.getZone()).willReturn(ZoneOffset.UTC);
+    }
+
+    private String evaluationOf(String week, int evaluateeId) {
+        List<RatingDto> ratings = List.of(
+                new RatingDto(null, 1, 4.0), new RatingDto(null, 2, 9.0), new RatingDto(null, 3, 7.0),
+                new RatingDto(null, 4, 10.0), new RatingDto(null, 5, 5.0), new RatingDto(null, 6, 6.0));
+        return this.jsonMapper.writeValueAsString(new PeerEvaluationDto(null, week, 4, "John Smith", evaluateeId,
+                null, ratings, 41.0, "Changed public", "Changed private", null, null));
     }
 
     @Test
